@@ -1,5 +1,6 @@
 #include <msp430.h>
 
+#define MAX_TASKS 2
 
 /**
  * main.c
@@ -11,40 +12,46 @@ typedef struct task{
 }task;
 
 const short int stackStart = 0x2802;
+const short int stackSize = 0x80;
+
 task taskVector[2];
+
 int currentIndex = 0;
-short int* pStackScheduler;
 
-void registerTask(short int* pFunction){
+short int* pStackScheduler = 0x2500;
 
-    asm("MOV.W SP,R7");
+void registerTask(void *pFunction){
 
     taskVector[currentIndex].pTask = pFunction;
 
+    int msbPC = (((int)pFunction & 0x000F0000) >> 4);
+
     // Finding stack's address;
-    volatile int stackBaseAddress = (stackStart - (0x80*currentIndex));
+    short int* stackBaseAddress = (stackStart - (stackSize*currentIndex));
 
-    // Move stack pointer to the beginning of each task's stack
-    asm("MOV.W %0,SP" : "=m" (stackBaseAddress));
+    stackBaseAddress--;
 
-    // Pushing task's address
-    asm("PUSH.W %0" : "=m" (taskVector[currentIndex].pTask));
+    *stackBaseAddress = pFunction;
 
-    // Pushing SR
-    asm("PUSH.W #8");
+    stackBaseAddress--;
+
+    *stackBaseAddress = (msbPC| 0x008);
 
     // Pushing registers
-    asm("PUSHM.W #12,R15");
+    int i = 12;
+    while(i){
+        *(--stackBaseAddress) = 0;
+        i--;
+    }
 
     // Saving stack pointer in task's stack pointer
-    asm("MOV.W SP,%0" : "=m" (taskVector[currentIndex].pStack) );
+    taskVector[currentIndex].pStack = stackBaseAddress;
 
     currentIndex++;
-
-    asm("MOV.W R7,SP");
 }
 
 void switchLEDGreen(){
+    P1DIR |= BIT1;
     int i;
     while(1){
         i = 500000;
@@ -56,6 +63,7 @@ void switchLEDGreen(){
 }
 
 void switchLEDRed(){
+    P1DIR |= BIT0;
     int i;
     while(1){
         i = 500000;
@@ -66,8 +74,7 @@ void switchLEDRed(){
     }
 }
 
-
-void main(void){
+void basicConfig(){
 
     WDTCTL = WDTPW | WDTHOLD;
 
@@ -75,21 +82,31 @@ void main(void){
 
     __enable_interrupt();
 
-    P1DIR |= BIT1;
-    P1DIR |= BIT0;
+}
 
-    registerTask(switchLEDGreen);
-    registerTask(switchLEDRed);
-
-    currentIndex = -1;
+void startRTOS(){
 
     // Initialize
     asm("MOV.W %0,SP" : "=m" (taskVector[0].pStack));
 
+    currentIndex = -1;
     WDTCTL = (WDTPW | WDTSSEL__ACLK | WDTIS_4 | WDTTMSEL_1);
     SFRIE1 = WDTIE;
 
     while(1);
+}
+
+
+void main(void){
+
+    basicConfig();
+
+    registerTask(switchLEDGreen);
+    registerTask(switchLEDRed);
+
+    //taskVector[0].pStack += 13;
+
+    startRTOS();
 
 }
 
@@ -104,11 +121,7 @@ void WDT_DISPATCHER(){
     }
 
     // Choosing next task
-    if(currentIndex == 1){
-        currentIndex = 0;
-    }else{
-        currentIndex++;
-    }
+    currentIndex = (currentIndex + 1) % MAX_TASKS;
 
     // Restoring context
     asm("MOV.W %0,SP" : "=m" (taskVector[currentIndex].pStack));
