@@ -1,4 +1,5 @@
 #include <msp430.h>
+#include <stdint.h>
 
 #define MAX_TASKS 2
 
@@ -7,8 +8,8 @@
  */
 
 typedef struct task{
-    short int* pStack;
-    short int* pTask;
+    volatile uint16_t* pStack;
+    volatile uint16_t* pTask;
 }task;
 
 const short int stackStart = 0x2802;
@@ -18,16 +19,16 @@ task taskVector[2];
 
 int currentIndex = 0;
 
-short int* pStackScheduler = 0x2500;
+uint16_t* pStackScheduler = 0x2500;
 
 void registerTask(void *pFunction){
 
     taskVector[currentIndex].pTask = pFunction;
 
-    int msbPC = (((int)pFunction & 0x000F0000) >> 4);
+    int msbPC = ((int)pFunction >> 4);
 
     // Finding stack's address;
-    short int* stackBaseAddress = (stackStart - (stackSize*currentIndex));
+    uint16_t* stackBaseAddress = (stackStart - (stackSize*currentIndex));
 
     stackBaseAddress--;
 
@@ -35,10 +36,10 @@ void registerTask(void *pFunction){
 
     stackBaseAddress--;
 
-    *stackBaseAddress = (msbPC| 0x008);
+    *stackBaseAddress = ((msbPC & 0x0000F000) | 0x008);
 
     // Pushing registers
-    int i = 12;
+    int i = 24;
     while(i){
         *(--stackBaseAddress) = 0;
         i--;
@@ -84,17 +85,28 @@ void basicConfig(){
 
 }
 
+// Compiler optimizes operations (WTF), removing operation add 24 to pStack
+#pragma GCC optimize ("0")
 void startRTOS(){
 
-    // Initialize
-    asm("MOV.W %0,SP" : "=m" (taskVector[0].pStack));
-
-    currentIndex = -1;
-    WDTCTL = (WDTPW | WDTSSEL__ACLK | WDTIS_4 | WDTTMSEL_1);
+    WDTCTL = (WDTPW | WDTSSEL__ACLK | WDTIS_4 | WDTTMSEL_1 | WDTCNTCL);
     SFRIE1 = WDTIE;
 
-    while(1);
+    currentIndex = 0;
+
+    // Move first's stack pointer to initial position
+    taskVector[0].pStack += 24;
+
+    volatile uint16_t aux = taskVector[0].pStack + 2;
+
+    // Initialize stack pointer to first task
+    asm("MOVX.W %0,SP" : "=m" (aux));
+    asm("MOVX.A #8,SR");
+    asm("MOVX.A %0,PC" : "=m" (taskVector[0].pTask));
+
+    return;
 }
+
 
 
 void main(void){
@@ -103,8 +115,6 @@ void main(void){
 
     registerTask(switchLEDGreen);
     registerTask(switchLEDRed);
-
-    //taskVector[0].pStack += 13;
 
     startRTOS();
 
@@ -115,17 +125,21 @@ __attribute__ ((interrupt(WDT_VECTOR)))
 void WDT_DISPATCHER(){
 
     // Saving Current Context
-    if(currentIndex >= 0){
-        asm("PUSHM.W #12,R15");
-        asm("MOV.W SP,%0" : "=m" (taskVector[currentIndex].pStack) );
-    }
+    asm("PUSHM.A #12,R15");
+    asm("MOVX.A SP,%0" : "=m" (taskVector[currentIndex].pStack) );
+
+    // Move SP to scheduler's stack
+    asm("MOVX.W %0,SP" : "=m" (pStackScheduler));
 
     // Choosing next task
     currentIndex = (currentIndex + 1) % MAX_TASKS;
 
+    // Save scheduler's stack
+    asm("MOVX.W SP,%0" : "=m" (pStackScheduler));
+
     // Restoring context
-    asm("MOV.W %0,SP" : "=m" (taskVector[currentIndex].pStack));
-    asm("POPM.W #12,R15");
+    asm("MOVX.A %0,SP" : "=m" (taskVector[currentIndex].pStack));
+    asm("POPM.A #12,R15");
 
     asm("RETI");
 
