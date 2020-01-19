@@ -9,6 +9,13 @@
  * main.c
  */
 
+typedef struct queue{
+    int size;
+    volatile uint16_t* pTasksVector;
+    int head;
+    int tail;
+}queue;
+
 typedef struct task{
     volatile uint16_t* pStack;
     volatile uint16_t* pTask;
