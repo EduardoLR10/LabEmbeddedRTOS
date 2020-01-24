@@ -1,31 +1,15 @@
 #include "kernel.h"
-
-void switchLEDGreen(){
-    P1DIR |= BIT1;
-    P1OUT &= ~BIT1;
-    while(1){
-        wait(250);
-        P1OUT ^= BIT1;
-    }
-}
-
-void switchLEDRed(){
-    P1DIR |= BIT0;
-    P1OUT &= ~BIT0;
-    while(1){
-        wait(250);
-        P1OUT ^= BIT0;
-    }
-}
+#include "tasks.h"
+#include "fifo.h"
 
 int main(void){
 
     basicConfig();
 
-    initializeQueues();
+    initializeFifos();
 
-    registerTask(switchLEDGreen);
-    registerTask(switchLEDRed);
+    registerTask(switchLEDGreen, HIGH, 10);
+    registerTask(switchLEDRed, LOW, 10);
 
     startRTOS();
 
