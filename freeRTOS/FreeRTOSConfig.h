@@ -61,10 +61,17 @@ __persistent keyword to be used.  See http://www.freertos.org/a00111.html#heap_4
 #define configNUM_THREAD_LOCAL_STORAGE_POINTERS	0
 #define configENABLE_BACKWARD_COMPATIBILITY		0
 
+
+#define configSUPPORT_STATIC_ALLOCATION 0
+
+
+#define configSUPPORT_DYNAMIC_ALLOCATION 1
+
+
 /* Hook function related definitions. */
 #define configUSE_TICK_HOOK				1
 #define configUSE_IDLE_HOOK				1
-#define configUSE_MALLOC_FAILED_HOOK	1
+#define configUSE_MALLOC_FAILED_HOOK	0
 #define configCHECK_FOR_STACK_OVERFLOW	2
 
 /* Software timer related definitions. */
